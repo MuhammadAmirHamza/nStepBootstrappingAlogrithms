@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 
 
-env = gym.make('CartPole-v1', max_episode_steps=1999)
+env = gym.make('CartPole-v1', max_episode_steps=1000, render_mode = 'human')
+
 print('Action Space                 : ', env.action_space.n)
 print('Number of Observations       : ', env.observation_space.shape)
 print('Observation Space High       : ', env.observation_space.high)
@@ -32,7 +33,8 @@ for i in range(5000):
     nextState, _, terminated, truncated, _ = env.step(action)
     temp[i, :] = nextState
     if terminated or truncated:
-        env.reset()
+        print('Break')
+        break
         
 print('max position                     : ', np.max(temp[:, 0]))
 print('max linear velocity              : ', np.max(temp[:, 1]))
