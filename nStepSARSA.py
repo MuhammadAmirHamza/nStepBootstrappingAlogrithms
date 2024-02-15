@@ -7,6 +7,7 @@ import numpy as np
 import gymnasium as gym
 import time
 import pickle
+import matplotlib.pyplot as plt
 
 class nStepSARSA:
     def __init__(self, env, initialPolicy = None, nSteps = 2, discountFactor = 1, stepSize = 0.2, epsilon = 0.2, maxIterations = 1000):
@@ -43,8 +44,6 @@ class nStepSARSA:
         self.maxStateNum = self.StateQuantizer(self.env.observation_space.high)
 
         # policy
-        # with open('PolicyCartPole.pkl', 'rb') as f:
-        #     self.policy = pickle.load(f)
         if initialPolicy == None:
             self.policy = np.random.rand(self.maxStateNum, self.env.action_space.n)
             # normalizing the policy so that the sum is one
@@ -102,7 +101,7 @@ class nStepSARSA:
 
         # states visited: this will help us to update the policy for these states only (will help in greedification)
         statesVisitedPerEpisode = []
-        
+        cumReward = 0
         terminated = False
         truncated = False
 
@@ -114,14 +113,15 @@ class nStepSARSA:
         # for t > 0
         while True:
             t = t + 1
-            tau = t - self.n 
+            tau = t - self.n
             statesVisitedPerEpisode.append(state)
-            
+
             # excite the environment before terminate or truncate
             if terminated == False and truncated == False:
                 nextState, reward, terminated, truncated, _ = self.env.step(action)
                 nextState = self.StateQuantizer(nextState)
                 nextAction = np.random.choice(totalActions, p = self.policy[nextState])
+                cumReward = cumReward + reward
 
                 # store the rewards
                 listOfRewards = np.roll(listOfRewards, -1)
@@ -144,7 +144,7 @@ class nStepSARSA:
 
             state = nextState
             action = nextAction
-        return self.qValueFunction, statesVisitedPerEpisode
+        return self.qValueFunction, statesVisitedPerEpisode, cumReward
 
     def eGreedification(self, statesVisitedPerEpisode) -> list:
         """
@@ -161,31 +161,44 @@ class nStepSARSA:
             self.policy[state, maximumPoints[0]] = (1 - self.epsilon) / len(maximumPoints[0]) + self.epsilon / self.env.action_space.n
         return self.policy
 
-    def PolicyIteration(self) -> list:
+    def PolicyIteration(self) -> (list, int):
         """
         This function gives the optimal or sub-optimal policy for the environment
 
         Returns:
             list: suboptimal policy
+            int : reward per episode
         """
+        rewardsPerIteration = list()
+
         for i in range(self.maxIterations):
-            _, statesVistiedPerEpisode = self.PolicyEvaluation()
+            _, statesVistiedPerEpisode, cumRewardPerEpisode = self.PolicyEvaluation()
             self.eGreedification(statesVistiedPerEpisode)
-            if i % 50 == 0:
+            rewardsPerIteration.append(cumRewardPerEpisode)
+            if i % 500 == 0:
                 print(f'num episode : {i} , length of episode : {len(statesVistiedPerEpisode)} ')
-        
-        # optimal policy
+
+        # Greedification for optimal policy
         for i in range(self.maxStateNum):
             maximumPoints = np.where(self.qValueFunction[i, :] == np.max(self.qValueFunction[i, :]))[0]
-            self.optimalPolicy[i, maximumPoints] = 1/len(maximumPoints)        
-        with open('PolicyCartPole.pkl', 'wb') as f:
+            self.optimalPolicy[i, maximumPoints] = 1/len(maximumPoints)
+        
+        # saving optimal policy
+        with open('PolicyNStepSARSACartPole.pkl', 'wb') as f:
             pickle.dump(self.optimalPolicy, f)
         f.close()
-        return self.optimalPolicy
+        return self.optimalPolicy, rewardsPerIteration
 
-    def TestPolicy(self):
+    def TestPolicy(self)-> int:
+        """
+        This function tests the efficiency of a policy on the environment.
+
+        Returns:
+            int: total reward
+        """
         env = gym.make('CartPole-v1', render_mode = 'human', max_episode_steps=2000)
-        with open('PolicyCartPole.pkl', 'rb') as f:
+        # env = gym.make('CartPole-v1', max_episode_steps=2000)
+        with open('PolicyNStepSARSACartPole.pkl', 'rb') as f:
             self.policy = pickle.load(f)
         f.close()
         state, _ = env.reset()
@@ -195,7 +208,7 @@ class nStepSARSA:
         terminated = False
         truncated = False
         while True:
-            action = np.random.choice(totalActions, p = self.policy[state])
+            action = np.random.choice(totalActions, p = self.optimalPolicy[state])
             state, reward, terminated, truncated, info = env.step(action)
             state = self.StateQuantizer(state)
             cumReward += reward
@@ -210,10 +223,25 @@ class nStepSARSA:
 
 if __name__ == '__main__':
     env = gym.make('CartPole-v1', max_episode_steps=2000)
-    obj = nStepSARSA(env, maxIterations = 10000)
-    print(obj.TestPolicy())
-    obj.PolicyIteration()
-    print(obj.TestPolicy())
-    print(obj.qValueFunction.max())
+    maxIterations = 5000
+    plt.figure()
+    for i in [5, 10]:
+        print('Training for n = ', i)
+        print('====================')
+        obj = nStepSARSA(env, nSteps=i, maxIterations = maxIterations)
+        optimalPolicy, rewardsPerIteration = obj.PolicyIteration()
+        plt.plot(np.arange(1,maxIterations + 1), rewardsPerIteration, label = f'for n = {i}')
+    plt.legend()
+    plt.xlabel('iteration number')
+    plt.ylabel('Rewards per Iterations')
+    plt.title('Response for different values of n')
+    plt.show()
     
-    
+    # testing the policy graphically
+    obj.TestPolicy()
+
+
+
+
+
+
